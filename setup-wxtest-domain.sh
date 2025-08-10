@@ -34,9 +34,6 @@ server {
     listen 80;
     server_name $DOMAIN;
     
-    # 可选：重定向到HTTPS
-    # return 301 https://\$server_name\$request_uri;
-    
     location / {
         proxy_pass http://$BACKEND_HOST:$BACKEND_PORT/;
         proxy_set_header Host \$host;
@@ -63,56 +60,13 @@ server {
         proxy_next_upstream error timeout invalid_header http_500 http_502 http_503 http_504;
     }
     
-    # 健康检查端点（可选）
+    # 健康检查端点
     location /health {
         access_log off;
         return 200 "healthy\n";
         add_header Content-Type text/plain;
     }
 }
-
-# HTTPS配置 - 如需HTTPS请申请证书后启用
-# server {
-#     listen 443 ssl http2;
-#     server_name $DOMAIN;
-#     
-#     ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
-#     ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
-#     
-#     # SSL配置
-#     ssl_protocols TLSv1.2 TLSv1.3;
-#     ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-SHA384;
-#     ssl_prefer_server_ciphers on;
-#     ssl_session_cache shared:SSL:10m;
-#     
-#     location / {
-#         proxy_pass http://$BACKEND_HOST:$BACKEND_PORT/;
-#         proxy_set_header Host \$host;
-#         proxy_set_header X-Real-IP \$remote_addr;
-#         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-#         proxy_set_header X-Forwarded-Proto \$scheme;
-#         
-#         proxy_http_version 1.1;
-#         proxy_set_header Upgrade \$http_upgrade;
-#         proxy_set_header Connection "upgrade";
-#         
-#         proxy_connect_timeout 60s;
-#         proxy_send_timeout 60s;
-#         proxy_read_timeout 60s;
-#         
-#         proxy_buffering on;
-#         proxy_buffer_size 4k;
-#         proxy_buffers 8 4k;
-#         
-#         proxy_next_upstream error timeout invalid_header http_500 http_502 http_503 http_504;
-#     }
-#     
-#     location /health {
-#         access_log off;
-#         return 200 "healthy\n";
-#         add_header Content-Type text/plain;
-#     }
-# }
 EOF
 
 # 启用网站配置
@@ -142,6 +96,22 @@ if [ $? -eq 0 ]; then
     systemctl reload nginx
     echo -e "${GREEN}✅ nginx配置重载成功${NC}"
     
+    # 自动申请SSL证书
+    echo -e "${YELLOW}申请SSL证书并配置HTTPS...${NC}"
+    if command -v certbot > /dev/null; then
+        certbot --nginx -d $DOMAIN --non-interactive --agree-tos --email admin@wedaren.tech --redirect
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✅ SSL证书配置成功${NC}"
+        else
+            echo -e "${YELLOW}⚠️  SSL证书申请失败，但HTTP配置正常${NC}"
+        fi
+    else
+        echo -e "${YELLOW}⚠️  certbot未安装，跳过SSL证书配置${NC}"
+        echo -e "${YELLOW}手动安装certbot并配置SSL:${NC}"
+        echo "sudo apt install certbot python3-certbot-nginx"
+        echo "sudo certbot --nginx -d $DOMAIN"
+    fi
+    
     echo ""
     echo -e "${GREEN}=== $DOMAIN 反向代理配置完成！ ===${NC}"
     echo ""
@@ -151,14 +121,13 @@ if [ $? -eq 0 ]; then
     echo "nginx配置文件: /etc/nginx/sites-available/$DOMAIN"
     echo ""
     echo -e "${YELLOW}测试访问:${NC}"
-    echo "http://$DOMAIN"
-    echo ""
-    echo -e "${YELLOW}启用HTTPS (可选):${NC}"
-    echo "sudo certbot --nginx -d $DOMAIN"
+    echo "HTTP: http://$DOMAIN (自动重定向到HTTPS)"
+    echo "HTTPS: https://$DOMAIN"
+    echo "健康检查: https://$DOMAIN/health"
     echo ""
     echo -e "${YELLOW}检查状态:${NC}"
     echo "sudo systemctl status nginx"
-    echo "curl -I http://$DOMAIN"
+    echo "curl -I https://$DOMAIN"
     
 else
     echo -e "${RED}❌ nginx配置测试失败${NC}"
